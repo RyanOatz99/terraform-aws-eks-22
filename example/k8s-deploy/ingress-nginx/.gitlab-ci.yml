@@ -1,0 +1,42 @@
+install-ingress-nginx:
+  stage: install-level-2
+  variables:
+    APP: ingress-nginx
+  before_script:
+    - !reference [.aws_configure_kubeconfig, before_script]
+  script:
+    - cd $APP
+    - kubectl create namespace $APP --dry-run=client -o yaml | kubectl apply -f -
+    - kubectl config set-context --current --namespace=$APP
+    - helm repo add $APP https://kubernetes.github.io/ingress-nginx
+    - helm repo update
+    - helm upgrade -i $APP $APP/$APP --values=helm-values.yml
+  rules:
+    - changes:
+        - ingress-nginx/*
+      if: $CI_PIPELINE_SOURCE == "trigger" || $CI_PIPELINE_SOURCE == "push"
+      allow_failure: true
+  tags:
+    - k8s
+
+
+uninstall-ingress-nginx:
+  stage: uninstall
+  needs: ["install-ingress-nginx"]
+  variables:
+    APP: ingress-nginx
+  before_script:
+    - !reference [.aws_configure_kubeconfig, before_script]
+  script:
+    - cd $APP
+    - kubectl config set-context --current --namespace=$APP
+    - helm repo add $APP https://kubernetes.github.io/ingress-nginx
+    - helm repo update
+    - helm uninstall $APP
+  rules:
+    - changes:
+        - ingress-nginx/*
+      if: $CI_PIPELINE_SOURCE == "trigger" || $CI_PIPELINE_SOURCE == "push"
+      when: manual
+  tags:
+    - k8s

@@ -1,0 +1,52 @@
+install-kube-prometheus-stack:
+  stage: install-level-3
+  variables:
+    APP: prometheus
+  before_script:
+    - !reference [.aws_configure_kubeconfig, before_script]
+  script:
+    - cd $APP
+    - kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+    - kubectl config set-context --current --namespace=monitoring
+    - helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+    - helm repo add stable https://charts.helm.sh/stable
+    - helm repo update
+    - helm upgrade -i kube-$APP-stack $APP-community/kube-$APP-stack --values=helm-values.yml
+  rules:
+    - changes:
+        - prometheus/*
+      if: $CI_PIPELINE_SOURCE == "trigger" || $CI_PIPELINE_SOURCE == "push"
+      allow_failure: true
+  tags:
+    - k8s
+
+
+uninstall-kube-prometheus-stack:
+  stage: uninstall
+  needs: ["install-kube-prometheus-stack"]
+  variables:
+    APP: prometheus
+  before_script:
+    - !reference [.aws_configure_kubeconfig, before_script]
+  script:
+    - cd $APP
+    - kubectl config set-context --current --namespace=monitoring
+    - helm repo add $APP-community https://prometheus-community.github.io/helm-charts
+    - helm repo add stable https://charts.helm.sh/stable
+    - helm repo update
+    - helm uninstall kube-$APP-stack
+    - kubectl delete crd alertmanagerconfigs.monitoring.coreos.com --ignore-not-found=true
+    - kubectl delete crd alertmanagers.monitoring.coreos.com --ignore-not-found=true
+    - kubectl delete crd podmonitors.monitoring.coreos.com --ignore-not-found=true
+    - kubectl delete crd probes.monitoring.coreos.com --ignore-not-found=true
+    - kubectl delete crd prometheuses.monitoring.coreos.com --ignore-not-found=true
+    - kubectl delete crd prometheusrules.monitoring.coreos.com --ignore-not-found=true
+    - kubectl delete crd servicemonitors.monitoring.coreos.com --ignore-not-found=true
+    - kubectl delete crd thanosrulers.monitoring.coreos.com --ignore-not-found=true
+  rules:
+    - changes:
+        - prometheus/*
+      if: $CI_PIPELINE_SOURCE == "trigger" || $CI_PIPELINE_SOURCE == "push"
+      when: manual
+  tags:
+    - k8s

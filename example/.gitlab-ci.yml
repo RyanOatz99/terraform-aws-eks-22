@@ -1,0 +1,67 @@
+stages:
+  - init-state
+  - destroy-state
+  - build
+  - apply
+  - deploy
+  - destroy
+
+variables:
+  GIT_DEPTH: 2
+
+include:
+  - local: .gitlab-ci-docker.yml
+  - local: .gitlab-ci-init-state.yml
+  - local: .gitlab-ci-eks.yml
+
+.docker_login:
+  before_script:
+    - printenv
+    - docker info
+    - echo $CI_REGISTRY_PASSWORD | docker login $CI_REGISTRY -u $CI_REGISTRY_USER --password-stdin
+
+.aws_configure:
+  before_script:
+    - printenv
+    - aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID
+    - aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY
+    - aws configure set default.region $AWS_DEFAULT_REGION
+
+.terragrunt_plan_multiline:
+  script:
+    - printenv
+    - |
+      export DIFF=$(git diff $CI_COMMIT_BEFORE_SHA $CI_COMMIT_SHA --name-only --diff-filter=d | grep "values.yaml" | sed -e "s/\/values.yaml//g" | sort -u)
+      echo $DIFF
+
+      for F in $DIFF; do
+        cd $F
+        terragrunt run-all plan --terragrunt-non-interactive -out $CI_PROJECT_DIR/$F/tfplan-$CI_COMMIT_SHA
+        cd $CI_PROJECT_DIR
+      done
+
+.terragrunt_apply_multiline:
+  script:
+    - printenv
+    - |
+      export DIFF=$(git diff $CI_COMMIT_BEFORE_SHA $CI_COMMIT_SHA --name-only --diff-filter=d | grep "values.yaml" | sed -e "s/\/values.yaml//g" | sort -u)
+      echo $DIFF
+
+      for F in $DIFF; do
+        cd $F
+        terragrunt run-all apply --terragrunt-non-interactive -auto-approve $CI_PROJECT_DIR/$F/tfplan-$CI_COMMIT_SHA
+        cd $CI_PROJECT_DIR
+      done
+
+.terragrunt_destroy_multiline:
+  script:
+    - printenv
+    - |
+      export DIFF=$(git diff $CI_COMMIT_BEFORE_SHA $CI_COMMIT_SHA --name-only --diff-filter=d | grep "values.yaml" | sed -e "s/\/values.yaml//g" | sort -u)
+      echo $DIFF
+
+      for F in $DIFF; do
+        cd $F
+        terragrunt run-all destroy --terragrunt-non-interactive -auto-approve
+        cd $CI_PROJECT_DIR
+      done

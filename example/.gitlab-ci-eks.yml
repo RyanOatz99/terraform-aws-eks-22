@@ -1,0 +1,102 @@
+plan-and-apply-eks:
+  image:
+    name: registry.gitlab.com/vainkop1/terraform:1.0.0
+    entrypoint: [""]
+  stage: apply
+  variables:
+    APP: dev
+  before_script:
+    - !reference [.aws_configure, before_script]
+  script:
+    - cd eks/$APP
+    - terragrunt run-all plan --terragrunt-non-interactive -out $CI_PROJECT_DIR/eks/$APP/tfplan-$CI_COMMIT_SHA
+    - terragrunt run-all apply --terragrunt-non-interactive -auto-approve $CI_PROJECT_DIR/eks/$APP/tfplan-$CI_COMMIT_SHA
+    - terragrunt output vpc_id > $CI_PROJECT_DIR/eks/$APP/vpc_id
+    - terragrunt output kubeconfig | grep -v EOT > $CI_PROJECT_DIR/eks/$APP/kubeconfig
+    - terragrunt output cluster_name > $CI_PROJECT_DIR/eks/$APP/cluster_name
+    - mkdir -p $HOME/.kube && cp $CI_PROJECT_DIR/eks/$APP/kubeconfig $HOME/.kube/config
+    - export KUBECONFIG=$HOME/.kube/config
+    - kubectl config view
+    - kubectl config get-clusters
+    - kubectl config get-contexts
+    - kubectl config current-context
+    - kubectl get nodes -o wide
+#    - eksctl utils associate-iam-oidc-provider --cluster $(cat $CI_PROJECT_DIR/eks/$APP/cluster_name | sed -e 's/"//g') --approve
+  rules:
+    - changes:
+        - eks/**/values.yaml
+      allow_failure: true
+  artifacts:
+    paths:
+    - $CI_PROJECT_DIR/eks/$APP/vpc_id
+    - $CI_PROJECT_DIR/eks/$APP/kubeconfig
+    - $CI_PROJECT_DIR/eks/$APP/cluster_name
+
+
+trigger-deploy:
+  image:
+    name: registry.gitlab.com/vainkop1/terraform:1.0.0
+    entrypoint: [""]
+  stage: deploy
+  needs: ["plan-and-apply-eks"]
+  variables:
+    PROJECT_ID: "26025008" #https://gitlab.com/vainkop1/k8s-deploy
+    APP: dev
+  script:
+    - |
+      export VARIABLE_TYPE='file'
+      export PROTECTED='false'
+      export MASKED='false'
+      export ENVIRONMENT_SCOPE='"*"'
+      export VARIABLE_NAME='KUBECONFIG'
+      export LOCAL_VAR_FILE_NAME='kubeconfig'
+
+      ./update-variable.sh "$VARIABLE_NAME" "$VARIABLE_TYPE" "$LOCAL_VAR_FILE_NAME" "$PROTECTED" "$MASKED" "$ENVIRONMENT_SCOPE" "$GITLAB_API_RW_PRIVATE_TOKEN" "$CI_API_V4_URL" "$PROJECT_ID"
+    - |
+      export VARIABLE_TYPE='env_var'
+      export PROTECTED='false'
+      export MASKED='false'
+      export ENVIRONMENT_SCOPE='"*"'
+      export VARIABLE_NAME='VPC_ID'
+      export LOCAL_VAR_FILE_NAME='vpc_id'
+
+      ./update-variable.sh "$VARIABLE_NAME" "$VARIABLE_TYPE" "$LOCAL_VAR_FILE_NAME" "$PROTECTED" "$MASKED" "$ENVIRONMENT_SCOPE" "$GITLAB_API_RW_PRIVATE_TOKEN" "$CI_API_V4_URL" "$PROJECT_ID"
+    - |
+      export VARIABLE_TYPE='env_var'
+      export PROTECTED='false'
+      export MASKED='false'
+      export ENVIRONMENT_SCOPE='"*"'
+      export VARIABLE_NAME='CLUSTER_NAME'
+      export LOCAL_VAR_FILE_NAME='cluster_name'
+
+      ./update-variable.sh "$VARIABLE_NAME" "$VARIABLE_TYPE" "$LOCAL_VAR_FILE_NAME" "$PROTECTED" "$MASKED" "$ENVIRONMENT_SCOPE" "$GITLAB_API_RW_PRIVATE_TOKEN" "$CI_API_V4_URL" "$PROJECT_ID"
+    - |
+      curl -X POST \
+      -F token=$K8S_TRIGGER_TOKEN \
+      -F ref=master \
+      $CI_API_V4_URL/projects/$PROJECT_ID/trigger/pipeline
+  rules:
+    - changes:
+        - eks/**/values.yaml
+      allow_failure: true
+
+
+destroy-eks:
+  image:
+    name: registry.gitlab.com/vainkop1/terraform:1.0.0
+    entrypoint: [""]
+  stage: destroy
+  needs: ["plan-and-apply-eks"]
+  variables:
+    APP: dev
+  before_script:
+    - !reference [.aws_configure, before_script]
+  script:
+    - cd eks/$APP
+    - terragrunt state rm module.eks.kubernetes_config_map.aws_auth[0]
+    - terragrunt run-all destroy --terragrunt-non-interactive -auto-approve
+  rules:
+    - changes:
+        - eks/**/values.yaml
+      allow_failure: true
+      when: manual

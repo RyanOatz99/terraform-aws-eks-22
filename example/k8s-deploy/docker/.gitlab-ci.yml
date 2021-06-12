@@ -1,0 +1,18 @@
+docker-build-test:
+  services:
+   - docker:20.10.6-dind
+  stage: build
+  variables:
+    APP: docker
+  before_script:
+    - !reference [.docker_wait, before_script]
+  script:
+    - cd $APP
+    - docker build -t $CI_REGISTRY_IMAGE/$APP:$CI_COMMIT_SHORT_SHA .
+    - docker push $CI_REGISTRY_IMAGE/$APP:$CI_COMMIT_SHORT_SHA
+  rules:
+    - changes:
+        - docker/*
+      if: $CI_PIPELINE_SOURCE == "trigger" || $CI_PIPELINE_SOURCE == "push"
+  tags:
+    - k8s

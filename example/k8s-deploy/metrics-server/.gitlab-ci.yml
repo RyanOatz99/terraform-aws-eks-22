@@ -1,0 +1,41 @@
+install-metrics-server:
+  stage: install-level-1
+  variables:
+    APP: metrics-server
+  before_script:
+    - !reference [.aws_configure_kubeconfig, before_script]
+  script:
+    - cd $APP
+    - kubectl config set-context --current --namespace=kube-system
+    - helm repo add bitnami https://charts.bitnami.com/bitnami
+    - helm repo update
+    - helm upgrade -i $APP bitnami/$APP --set apiService.create=true
+  rules:
+    - changes:
+        - metrics-server/*
+      if: $CI_PIPELINE_SOURCE == "trigger" || $CI_PIPELINE_SOURCE == "push"
+      allow_failure: true
+  tags:
+    - k8s
+
+
+uninstall-metrics-server:
+  stage: uninstall
+  needs: ["install-metrics-server"]
+  variables:
+    APP: metrics-server
+  before_script:
+    - !reference [.aws_configure_kubeconfig, before_script]
+  script:
+    - cd $APP
+    - kubectl config set-context --current --namespace=kube-system
+    - helm repo add bitnami https://charts.bitnami.com/bitnami
+    - helm repo update
+    - helm uninstall $APP
+  rules:
+    - changes:
+        - metrics-server/*
+      if: $CI_PIPELINE_SOURCE == "trigger" || $CI_PIPELINE_SOURCE == "push"
+      when: manual
+  tags:
+    - k8s

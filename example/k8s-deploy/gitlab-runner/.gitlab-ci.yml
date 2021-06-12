@@ -1,0 +1,87 @@
+create-gitlab-access-secrets:
+  stage: create-iam
+  variables:
+    APP: gitlab-runner
+    CLUSTER_NAME: $CLUSTER_NAME
+  before_script:
+    - !reference [.aws_configure_kubeconfig, before_script]
+  script:
+    - cd $APP
+    - kubectl create namespace gitlab --dry-run=client -o yaml | kubectl apply -f -
+    - kubectl config set-context --current --namespace=gitlab
+#    - docker login $CI_REGISTRY -u $GITLAB_REGISTRY_USER -p $GITLAB_REGISTRY_PASSWORD
+#    - docker login -u $DOCKERHUB_USER -p $DOCKERHUB_PASSWORD
+#    - cat ~/.docker/config.json
+    - cp $DOCKER_AUTH_LOGIN config.json
+    - |
+      kubectl create secret generic registry \
+        --from-file=.dockerconfigjson=config.json \
+        --type=kubernetes.io/dockerconfigjson \
+        --dry-run=client -o yaml | kubectl apply -f -
+    - |
+      kubectl create secret generic gitlab-s3access \
+        --from-literal=accesskey="$AWS_ACCESS_KEY_ID" \
+        --from-literal=secretkey="$AWS_SECRET_ACCESS_KEY" \
+        --dry-run=client -o yaml | kubectl apply -f -
+  rules:
+    - changes:
+        - gitlab-runner/*
+      if: $CI_PIPELINE_SOURCE == "trigger" || $CI_PIPELINE_SOURCE == "push"
+      allow_failure: true
+
+
+install-gitlab-runner:
+  stage: install-executor
+  needs: ["create-gitlab-access-secrets"]
+  variables:
+    APP: gitlab-runner
+  before_script:
+    - !reference [.aws_configure_kubeconfig, before_script]
+  script:
+    - cd $APP
+    - kubectl config set-context --current --namespace=gitlab
+    - helm repo add gitlab https://charts.gitlab.io && helm repo update
+    - envsubst < helm-values.yml | helm upgrade -i $APP gitlab/$APP --values=-
+  rules:
+    - changes:
+        - gitlab-runner/*
+      if: $CI_PIPELINE_SOURCE == "trigger" || $CI_PIPELINE_SOURCE == "push"
+      allow_failure: true
+
+
+uninstall-gitlab-runner:
+  stage: uninstall
+  needs: ["install-gitlab-runner"]
+  variables:
+    APP: gitlab-runner
+  before_script:
+    - !reference [.aws_configure_kubeconfig, before_script]
+  script:
+    - cd $APP
+    - kubectl config set-context --current --namespace=gitlab
+    - helm repo add gitlab https://charts.gitlab.io && helm repo update
+    - helm uninstall $APP
+  rules:
+    - changes:
+        - gitlab-runner/*
+      if: $CI_PIPELINE_SOURCE == "trigger" || $CI_PIPELINE_SOURCE == "push"
+      when: manual
+
+
+delete-docker-login-secret:
+  stage: delete-iam
+  needs: ["uninstall-gitlab-runner"]
+  variables:
+    APP: gitlab-runner
+  before_script:
+    - !reference [.aws_configure_kubeconfig, before_script]
+  script:
+    - cd $APP
+    - kubectl config set-context --current --namespace=gitlab
+    - kubectl delete secret registry
+    - kubectl delete secret gitlab-s3access
+  rules:
+    - changes:
+        - gitlab-runner/*
+      if: $CI_PIPELINE_SOURCE == "trigger" || $CI_PIPELINE_SOURCE == "push"
+      when: manual

@@ -1,0 +1,55 @@
+install-cert-manager:
+  stage: install-level-1
+  before_script:
+    - !reference [.aws_configure_kubeconfig, before_script]
+  variables:
+    APP: cert-manager
+    CM_VERSION: v1.4.0-beta.0
+  script:
+    - cd $APP
+    - kubectl create namespace $APP --dry-run=client -o yaml | kubectl apply -f -
+    - kubectl config set-context --current --namespace=$APP
+    - helm -n $APP repo add jetstack https://charts.jetstack.io
+    - helm -n $APP repo update
+    - ./ca.sh
+    - |
+      helm -n $APP upgrade -i $APP jetstack/$APP \
+      --version $CM_VERSION \
+      --values=$CM_VERSION/helm-values.yml \
+      --set installCRDs=true \
+      --set ingressShim.defaultIssuerName=prod-clusterissuer \
+      --set ingressShim.defaultIssuerKind=ClusterIssuer \
+      --set ingressShim.defaultIssuerGroup=cert-manager.io \
+      --wait
+    - sleep 30
+    - kubectl -n $APP apply -f ClusterIssuer.yml
+  rules:
+    - changes:
+        - cert-manager/*
+      if: $CI_PIPELINE_SOURCE == "trigger" || $CI_PIPELINE_SOURCE == "push"
+      allow_failure: true
+
+
+uninstall-cert-manager:
+  stage: uninstall
+  needs: ["install-cert-manager"]
+  before_script:
+    - !reference [.aws_configure_kubeconfig, before_script]
+  variables:
+    APP: cert-manager
+    CM_VERSION: v1.4.0-beta.0
+  script:
+    - cd $APP
+    - kubectl config set-context --current --namespace=$APP
+    - helm repo add jetstack https://charts.jetstack.io
+    - helm repo update
+    - helm -n $APP uninstall $APP
+    - kubectl -n $APP delete -f ClusterIssuer.yml --ignore-not-found=true
+    - kubectl -n $APP delete -f secret.yml --ignore-not-found=true
+    - kubectl -n $APP delete -f $CM_VERSION/$APP-helm-template-crd-false.yml --ignore-not-found=true
+    - kubectl -n $APP delete -f $CM_VERSION/$APP.crds.yml --ignore-not-found=true
+  rules:
+    - changes:
+        - cert-manager/*
+      if: $CI_PIPELINE_SOURCE == "trigger" || $CI_PIPELINE_SOURCE == "push"
+      when: manual

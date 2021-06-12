@@ -1,0 +1,45 @@
+install-external-dns:
+  stage: install-level-2
+  variables:
+    APP: external-dns
+  before_script:
+    - !reference [.aws_configure_kubeconfig, before_script]
+  script:
+    - cd $APP
+    - kubectl config set-context --current --namespace=kube-system
+    - kubectl apply -f ServiceAccount.yml
+    - export ROLE_ARN=$(aws iam get-role --role-name $CLUSTER_NAME-external-dns | jq -c '.[]' | jq -r '.Arn')
+    - kubectl annotate --overwrite serviceaccount -n kube-system external-dns eks.amazonaws.com/role-arn=$ROLE_ARN
+    - helm repo add bitnami https://charts.bitnami.com/bitnami
+    - helm repo update
+    - envsubst < helm-values.yml | helm upgrade -i --force external-dns bitnami/external-dns --values=-
+  rules:
+    - changes:
+        - external-dns/*
+      if: $CI_PIPELINE_SOURCE == "trigger" || $CI_PIPELINE_SOURCE == "push"
+      allow_failure: true
+  tags:
+    - k8s
+
+
+uninstall-external-dns:
+  stage: uninstall
+  needs: ["install-external-dns"]
+  variables:
+    APP: external-dns
+  before_script:
+    - !reference [.aws_configure_kubeconfig, before_script]
+  script:
+    - cd $APP
+    - kubectl config set-context --current --namespace=kube-system
+    - helm repo add bitnami https://charts.bitnami.com/bitnami
+    - helm repo update
+    - helm uninstall external-dns
+    - kubectl delete -f ServiceAccount.yml
+  rules:
+    - changes:
+        - external-dns/*
+      if: $CI_PIPELINE_SOURCE == "trigger" || $CI_PIPELINE_SOURCE == "push"
+      when: manual
+  tags:
+    - k8s

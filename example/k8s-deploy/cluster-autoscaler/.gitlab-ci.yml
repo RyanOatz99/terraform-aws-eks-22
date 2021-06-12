@@ -1,0 +1,45 @@
+install-cluster-autoscaler:
+  stage: install-level-2
+  variables:
+    APP: cluster-autoscaler
+    CLUSTER_NAME: $CLUSTER_NAME
+  before_script:
+    - !reference [.aws_configure_kubeconfig, before_script]
+  script:
+    - cd $APP
+    - kubectl config set-context --current --namespace=kube-system
+    - kubectl apply -f ServiceAccount.yml
+    - export ROLE_ARN=$(aws iam get-role --role-name $CLUSTER_NAME-cluster-autoscaler | jq -c '.[]' | jq -r '.Arn')
+    - kubectl annotate --overwrite serviceaccount -n kube-system cluster-autoscaler eks.amazonaws.com/role-arn=$ROLE_ARN
+    - helm repo add autoscaler https://kubernetes.github.io/autoscaler && helm repo update
+    - helm install $APP autoscaler/$APP --set 'autoDiscovery.clusterName'=$CLUSTER_NAME --set awsRegion="$AWS_DEFAULT_REGION"
+  rules:
+    - changes:
+        - cluster-autoscaler/*
+      if: $CI_PIPELINE_SOURCE == "trigger" || $CI_PIPELINE_SOURCE == "push"
+      allow_failure: true
+  tags:
+    - k8s
+
+
+uninstall-cluster-autoscaler:
+  stage: uninstall
+  needs: ["install-cluster-autoscaler"]
+  variables:
+    APP: cluster-autoscaler
+    CLUSTER_NAME: $CLUSTER_NAME
+  before_script:
+    - !reference [.aws_configure_kubeconfig, before_script]
+  script:
+    - cd $APP
+    - kubectl config set-context --current --namespace=kube-system
+    - helm repo add autoscaler https://kubernetes.github.io/autoscaler && helm repo update
+    - helm uninstall $APP
+    - kubectl delete -f ServiceAccount.yml
+  rules:
+    - changes:
+        - cluster-autoscaler/*
+      if: $CI_PIPELINE_SOURCE == "trigger" || $CI_PIPELINE_SOURCE == "push"
+      when: manual
+  tags:
+    - k8s

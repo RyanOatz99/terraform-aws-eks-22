@@ -1,0 +1,42 @@
+init-state:
+  image:
+    name: registry.gitlab.com/vainkop1/terraform:1.0.0
+    entrypoint: [""]
+  stage: init-state
+  before_script:
+    - !reference [.aws_configure, before_script]
+  script:
+    - cd tf-init
+    - terraform init -input=false
+      -backend-config="address=$CI_API_V4_URL/projects/$CI_PROJECT_ID/terraform/state/init-state"
+      -backend-config="lock_address=$CI_API_V4_URL/projects/$CI_PROJECT_ID/terraform/state/init-state/lock"
+      -backend-config="unlock_address=$CI_API_V4_URL/projects/$CI_PROJECT_ID/terraform/state/init-state/lock"
+      -backend-config="username=gitlab-ci-token"
+      -backend-config="password=$CI_JOB_TOKEN"
+      -backend-config="lock_method=POST"
+      -backend-config="unlock_method=DELETE"
+      -backend-config="retry_wait_min=5"
+    - terraform apply -input=false -auto-approve
+  rules:
+    - changes:
+        - tf-init/*
+      when: manual
+      allow_failure: true
+
+
+destroy-state:
+  image:
+    name: registry.gitlab.com/vainkop1/terraform:1.0.0
+    entrypoint: [""]
+  stage: destroy-state
+  before_script:
+    - !reference [.aws_configure, before_script]
+  script:
+    - cd tf-init
+    - terraform init -input=false
+    - terraform destroy -input=false -auto-approve
+  rules:
+    - changes:
+        - tf-init/*
+      when: manual
+      allow_failure: true

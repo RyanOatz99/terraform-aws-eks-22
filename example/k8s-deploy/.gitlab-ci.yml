@@ -1,0 +1,52 @@
+image:
+  name: registry.gitlab.com/vainkop1/terraform:1.0.0
+  entrypoint: [""]
+
+# define stages so all services are deployed in correct order
+# also tags for the runner allow services to be deployed with a new runner after it is deployed
+stages:
+  - create-iam
+  - install-executor
+  - install-level-1
+  - install-level-2
+  - install-level-3
+  - build
+  - uninstall
+  - delete-iam
+
+variables:
+  DOCKER_HOST: tcp://docker:2376/
+  DOCKER_DRIVER: overlay2
+  DOCKER_TLS_CERTDIR: "/certs"
+  DOCKER_TLS_VERIFY: 1
+  DOCKER_CERT_PATH: "$DOCKER_TLS_CERTDIR/client"
+  GIT_DEPTH: 2
+
+.aws_configure_kubeconfig:
+  before_script:
+    - printenv
+    - aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID
+    - aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY
+    - aws configure set default.region $AWS_DEFAULT_REGION
+    - mkdir -p ~/.kube && cp $KUBECONFIG ~/.kube/config
+
+# docker_wait is needed to give enough time for the EKS node to generate docker certificates
+.docker_wait:
+  before_script:
+    - |
+      for i in $(seq 1 30)
+      do
+        docker info && break
+        echo "Waiting for docker to start"
+        sleep 1s
+      done
+
+include:
+  - local: gitlab-runner/.gitlab-ci.yml
+  - local: metrics-server/.gitlab-ci.yml
+  - local: cert-manager/.gitlab-ci.yml
+  - local: cluster-autoscaler/.gitlab-ci.yml
+  - local: external-dns/.gitlab-ci.yml
+  - local: ingress-nginx/.gitlab-ci.yml
+  - local: prometheus/.gitlab-ci.yml
+  - local: docker/.gitlab-ci.yml
