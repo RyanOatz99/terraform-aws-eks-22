@@ -9,9 +9,6 @@ create-gitlab-access-secrets:
     - cd $APP
     - kubectl create namespace gitlab --dry-run=client -o yaml | kubectl apply -f -
     - kubectl config set-context --current --namespace=gitlab
-#    - docker login $CI_REGISTRY -u $GITLAB_REGISTRY_USER -p $GITLAB_REGISTRY_PASSWORD
-#    - docker login -u $DOCKERHUB_USER -p $DOCKERHUB_PASSWORD
-#    - cat ~/.docker/config.json
     - cp $DOCKER_AUTH_LOGIN config.json
     - |
       kubectl create secret generic registry \

@@ -17,44 +17,66 @@ data "aws_availability_zones" "available" {}
 data "aws_caller_identity" "current" {}
 
 locals {
-  cluster_name = "${var.cluster_name}-eks-spot-${random_string.suffix.result}"
+  cluster_name = "${var.cluster_name}-${random_string.suffix.result}"
 }
 
 resource "random_string" "suffix" {
   length  = 8
   special = false
+  upper   = false
 }
 
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
-  version = "~> 3.0.0"
+  version = "= 3.1.0"
 
-  name                 = "${var.cluster_name}-vpc-${random_string.suffix.result}"
+  name                 = "${local.cluster_name}-vpc"
   cidr                 = var.vpc_cidr
   azs                  = data.aws_availability_zones.available.names
   public_subnets       = var.vpc_public_subnets
   enable_dns_hostnames = true
 }
 
-module "eks" {
-  source          = "terraform-aws-modules/eks/aws"
-  version         = "= 17.1.0"
-  cluster_name    = local.cluster_name
-  cluster_version = "1.20"
-  subnets         = module.vpc.public_subnets
-  vpc_id          = module.vpc.vpc_id
+data "aws_ami" "ubuntu" {
+  most_recent = true
 
-  #  enable_irsa         = true
+  filter {
+    name   = "name"
+    values = ["ubuntu-eks/k8s_1.20/images/hvm-ssd/ubuntu-focal-20.04-amd64-server-*"]
+  }
+
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+
+  owners = ["099720109477"] # Canonical
+}
+
+module "eks" {
+  source                    = "terraform-aws-modules/eks/aws"
+  version                   = "= 17.1.0"
+  cluster_name              = local.cluster_name
+  cluster_version           = "1.20"
+  subnets                   = module.vpc.public_subnets
+  vpc_id                    = module.vpc.vpc_id
+  cluster_service_ipv4_cidr = var.cluster_service_ipv4_cidr
 
   worker_groups_launch_template = [
     {
-      name                    = "${var.cluster_name}-eks-spot-${random_string.suffix.result}"
+      name                    = "eks-spot"
+      ami_id                  = data.aws_ami.ubuntu.id
       override_instance_types = var.eks_override_instance_types
       spot_instance_pools     = var.eks_spot_instance_pools
       asg_max_size            = var.eks_asg_max_size
       asg_desired_capacity    = var.eks_asg_desired_capacity
       kubelet_extra_args      = var.eks_kubelet_extra_args
       public_ip               = true
+
+      additional_userdata     = templatefile("${path.module}/templates/user-data.tmpl", {
+        additional_ssh_key    = var.additional_ssh_key,
+        ssh_user              = var.ssh_user
+      })
 
       tags = [
         {
@@ -68,7 +90,7 @@ module "eks" {
           "value"               = "owned"
         }
       ]
-    },
+    }
   ]
 
   workers_additional_policies = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/Cluster_Autoscaler_Policy"]

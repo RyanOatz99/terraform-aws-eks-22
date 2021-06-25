@@ -1,0 +1,17 @@
+#!/bin/bash -v
+
+if [[ "$(lsb_release -cs)"=="focal" ]]; then
+  export DEBIAN_FRONTEND=noninteractive
+
+  if $(systemctl is-active --quiet ufw); then
+    systemctl stop ufw && systemctl disable ufw
+  fi
+fi
+
+### Add ssh key
+
+mkdir -p /home/${ssh_user}/.ssh
+echo "${additional_ssh_key}" >> /home/${ssh_user}/.ssh/authorized_keys
+chmod 700 /home/${ssh_user} /home/${ssh_user}/.ssh
+chmod 600 /home/${ssh_user}/.ssh/authorized_keys
+chown ${ssh_user}:${ssh_user} /home/${ssh_user} -R

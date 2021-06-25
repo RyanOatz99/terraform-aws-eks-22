@@ -1,0 +1,40 @@
+install-aws-node-termination-handler:
+  stage: install-level-2
+  variables:
+    APP: aws-node-termination-handler
+  before_script:
+    - !reference [.aws_configure_kubeconfig, before_script]
+  script:
+    - cd $APP
+    - kubectl config set-context --current --namespace=kube-system
+    - helm repo add eks https://aws.github.io/eks-charts
+    - helm repo update
+    - |
+      helm upgrade -i $APP eks/$APP
+  rules:
+    - changes:
+        - prometheus/*
+      if: $CI_PIPELINE_SOURCE == "trigger" || $CI_PIPELINE_SOURCE == "push"
+      allow_failure: true
+  tags:
+    - k8s
+
+
+uninstall-aws-node-termination-handler:
+  stage: uninstall
+  needs: ["install-aws-node-termination-handler"]
+  variables:
+    APP: aws-node-termination-handler
+  before_script:
+    - !reference [.aws_configure_kubeconfig, before_script]
+  script:
+    - cd $APP
+    - kubectl config set-context --current --namespace=kube-system
+    - helm uninstall $APP
+  rules:
+    - changes:
+        - prometheus/*
+      if: $CI_PIPELINE_SOURCE == "trigger" || $CI_PIPELINE_SOURCE == "push"
+      when: manual
+  tags:
+    - k8s

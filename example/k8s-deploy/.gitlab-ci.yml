@@ -46,6 +46,7 @@ include:
   - local: metrics-server/.gitlab-ci.yml
   - local: cert-manager/.gitlab-ci.yml
   - local: cluster-autoscaler/.gitlab-ci.yml
+  - local: aws-node-termination-handler/.gitlab-ci.yml
   - local: external-dns/.gitlab-ci.yml
   - local: ingress-nginx/.gitlab-ci.yml
   - local: prometheus/.gitlab-ci.yml

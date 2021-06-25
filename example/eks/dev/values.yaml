@@ -4,6 +4,8 @@ ssh_key_id: YOUR_SSH_KEY_ID_HERE
 vpc_cidr: "10.0.0.0/16"
 vpc_public_subnets: ["10.0.4.0/24", "10.0.5.0/24", "10.0.6.0/24"]
 eks_override_instance_types: ["t3.2xlarge", "t3a.2xlarge", "m5a.2xlarge"]
-eks_spot_instance_pools: 2
+eks_spot_instance_pools: 3
 eks_asg_max_size: 5
 eks_asg_desired_capacity: 2
+additional_ssh_key: ADDITIONAL_SSH_KEY
+ssh_user: ubuntu
