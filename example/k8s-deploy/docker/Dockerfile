@@ -1,1 +1,1 @@
-FROM python:3.7.4-buster
+FROM python:3.12.0a4-buster
